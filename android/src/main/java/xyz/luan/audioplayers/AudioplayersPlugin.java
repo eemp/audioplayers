@@ -1,7 +1,5 @@
 package xyz.luan.audioplayers;
 
-import android.media.MediaPlayer;
-import android.media.AudioAttributes;
 import android.os.Handler;
 
 import java.io.IOException;
@@ -22,17 +20,21 @@ public class AudioplayersPlugin implements MethodCallHandler {
     private static final Logger LOGGER = Logger.getLogger(AudioplayersPlugin.class.getCanonicalName());
 
     private final MethodChannel channel;
-    private final Map<String, WrappedMediaPlayer> mediaPlayers = new HashMap<>();
     private final Handler handler = new Handler();
+    private final Map<String, WrappedMediaPlayer> mediaPlayers = new HashMap<>();
+    public final Registrar registrar;
+
     private Runnable positionUpdates;
 
     public static void registerWith(final Registrar registrar) {
         final MethodChannel channel = new MethodChannel(registrar.messenger(), "xyz.luan/audioplayers");
-        channel.setMethodCallHandler(new AudioplayersPlugin(channel));
+        channel.setMethodCallHandler(new AudioplayersPlugin(registrar, channel));
     }
 
-    private AudioplayersPlugin(final MethodChannel channel) {
+    private AudioplayersPlugin(final Registrar registrar, final MethodChannel channel) {
         this.channel = channel;
+        this.registrar = registrar;
+
         this.channel.setMethodCallHandler(this);
     }
 

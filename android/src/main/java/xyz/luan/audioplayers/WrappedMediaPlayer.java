@@ -1,10 +1,32 @@
 package xyz.luan.audioplayers;
 
+import android.content.Context;
 import android.media.AudioManager;
-import android.media.MediaPlayer;
-import android.media.AudioAttributes;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
+import android.os.HandlerThread;
+import android.os.Process;
+
+import com.google.android.exoplayer2.C;
+import com.google.android.exoplayer2.DefaultLoadControl;
+import com.google.android.exoplayer2.ExoPlaybackException;
+import com.google.android.exoplayer2.ExoPlayerFactory;
+import com.google.android.exoplayer2.PlaybackParameters;
+import com.google.android.exoplayer2.Player;
+import com.google.android.exoplayer2.Player.DefaultEventListener;
+import com.google.android.exoplayer2.SimpleExoPlayer;
+import com.google.android.exoplayer2.audio.AudioAttributes;
+import com.google.android.exoplayer2.source.ExtractorMediaSource;
+import com.google.android.exoplayer2.source.MediaSource;
+import com.google.android.exoplayer2.trackselection.DefaultTrackSelector;
+import com.google.android.exoplayer2.trackselection.TrackSelector;
+import com.google.android.exoplayer2.upstream.DataSource;
+import com.google.android.exoplayer2.upstream.DataSpec;
+import com.google.android.exoplayer2.upstream.DefaultDataSourceFactory;
+import com.google.android.exoplayer2.upstream.FileDataSource;
+import static com.google.android.exoplayer2.Player.REPEAT_MODE_ALL;
+import static com.google.android.exoplayer2.Player.REPEAT_MODE_OFF;
 
 import java.io.IOException;
 import java.lang.ref.WeakReference;
@@ -17,7 +39,7 @@ import io.flutter.plugin.common.MethodChannel;
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler;
 import io.flutter.plugin.common.PluginRegistry.Registrar;
 
-public class WrappedMediaPlayer implements MediaPlayer.OnPreparedListener, MediaPlayer.OnCompletionListener {
+public class WrappedMediaPlayer {
 
     private String playerId;
 
@@ -31,7 +53,7 @@ public class WrappedMediaPlayer implements MediaPlayer.OnPreparedListener, Media
 
     private double shouldSeekTo = -1;
 
-    private MediaPlayer player;
+    private SimpleExoPlayer player;
     private AudioplayersPlugin ref;
 
     public WrappedMediaPlayer(AudioplayersPlugin ref, String playerId) {
@@ -42,19 +64,19 @@ public class WrappedMediaPlayer implements MediaPlayer.OnPreparedListener, Media
     public void setUrl(String url) {
         if (!objectEquals(this.url, url)) {
             this.url = url;
-            
+
             if (this.released) {
                 this.player = createPlayer();
                 this.released = false;
             } else if (this.prepared) {
-                this.player.reset();
+                this.player.stop(true);
                 this.prepared = false;
             }
 
-            this.setSource(url);
-            this.player.setVolume((float) volume, (float) volume);
-            this.player.setLooping(this.releaseMode == ReleaseMode.LOOP);
-            this.player.prepareAsync();
+            this.prepareSource(url);
+            this.player.setVolume((float) volume);
+            this.player.setRepeatMode(this.releaseMode == ReleaseMode.LOOP ? REPEAT_MODE_ALL : REPEAT_MODE_OFF);
+            //this.player.setPlaybackParameters(new PlaybackParameters([> speed= */ (float) 0.5, /* pitch= */ 1, /* skipSilence= <] true));
         }
     }
 
@@ -66,7 +88,7 @@ public class WrappedMediaPlayer implements MediaPlayer.OnPreparedListener, Media
         if (this.volume != volume) {
             this.volume = volume;
             if (!this.released) {
-                this.player.setVolume((float) volume, (float) volume);
+                this.player.setVolume((float) volume);
             }
         }
     }
@@ -89,10 +111,9 @@ public class WrappedMediaPlayer implements MediaPlayer.OnPreparedListener, Media
             if (this.released) {
                 this.released = false;
                 this.player = createPlayer();
-                this.setSource(url);
-                this.player.prepareAsync();
+                this.prepareSource(url);
             } else if (this.prepared) {
-                this.player.start();
+                this.player.setPlayWhenReady(true);
                 this.ref.handleIsPlaying(this);
             }
         }
@@ -106,7 +127,7 @@ public class WrappedMediaPlayer implements MediaPlayer.OnPreparedListener, Media
         if (releaseMode != ReleaseMode.RELEASE) {
             if (this.playing) {
                 this.playing = false;
-                this.player.pause();
+                this.player.setPlayWhenReady(false);
                 this.player.seekTo(0);
             }
         } else {
@@ -120,9 +141,8 @@ public class WrappedMediaPlayer implements MediaPlayer.OnPreparedListener, Media
         }
 
         if (this.playing) {
-            this.player.stop();
+            this.player.setPlayWhenReady(false);
         }
-        this.player.reset();
         this.player.release();
         this.player = null;
 
@@ -134,14 +154,17 @@ public class WrappedMediaPlayer implements MediaPlayer.OnPreparedListener, Media
     public void pause() {
         if (this.playing) {
             this.playing = false;
-            this.player.pause();
+            this.player.setPlayWhenReady(false);
         }
     }
 
-    private void setSource(String url) {
+    private void prepareSource(String url) {
         try {
-            this.player.setDataSource(url);
-        } catch (IOException ex) {
+            Uri uri = Uri.parse(url);
+            DataSource.Factory dataSourceFactory = new DefaultDataSourceFactory(this.ref.registrar.context(), "ExoPlayer");
+            MediaSource mediaSource = new ExtractorMediaSource.Factory(dataSourceFactory).createMediaSource(uri);
+            this.player.prepare(mediaSource);
+        } catch (Exception ex) {
             throw new RuntimeException("Unable to access resource", ex);
         }
     }
@@ -156,11 +179,11 @@ public class WrappedMediaPlayer implements MediaPlayer.OnPreparedListener, Media
     }
 
     public int getDuration() {
-        return this.player.getDuration();
+        return (int)this.player.getDuration();
     }
 
     public int getCurrentPosition() {
-        return this.player.getCurrentPosition();
+        return (int)this.player.getCurrentPosition();
     }
 
     public String getPlayerId() {
@@ -171,7 +194,7 @@ public class WrappedMediaPlayer implements MediaPlayer.OnPreparedListener, Media
         if (this.releaseMode != releaseMode) {
             this.releaseMode = releaseMode;
             if (!this.released) {
-                this.player.setLooping(releaseMode == ReleaseMode.LOOP);
+                this.player.setRepeatMode(releaseMode == ReleaseMode.LOOP ? REPEAT_MODE_ALL : REPEAT_MODE_OFF);
             }
         }
     }
@@ -180,11 +203,10 @@ public class WrappedMediaPlayer implements MediaPlayer.OnPreparedListener, Media
         return this.releaseMode;
     }
 
-    @Override
-    public void onPrepared(final MediaPlayer mediaPlayer) {
+    public void onPrepared(final SimpleExoPlayer player) {
         this.prepared = true;
         if (this.playing) {
-            this.player.start();
+            this.player.setPlayWhenReady(true);
             ref.handleIsPlaying(this);
         }
         if (this.shouldSeekTo >= 0) {
@@ -193,8 +215,7 @@ public class WrappedMediaPlayer implements MediaPlayer.OnPreparedListener, Media
         }
     }
 
-    @Override
-    public void onCompletion(final MediaPlayer mediaPlayer) {
+    public void onCompletion(final SimpleExoPlayer player) {
         if (releaseMode != ReleaseMode.LOOP) {
             this.stop();
         }
@@ -202,11 +223,11 @@ public class WrappedMediaPlayer implements MediaPlayer.OnPreparedListener, Media
     }
 
     @SuppressWarnings("deprecation")
-    private void setAttributes(MediaPlayer player) {
+    private void setAttributes(SimpleExoPlayer player) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             player.setAudioAttributes(new AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    //.setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(C.CONTENT_TYPE_MUSIC)
                     .build()
             );
         } else {
@@ -215,14 +236,34 @@ public class WrappedMediaPlayer implements MediaPlayer.OnPreparedListener, Media
         }
     }
 
-    private MediaPlayer createPlayer() {
-        MediaPlayer player = new MediaPlayer();
-        player.setOnPreparedListener(this);
-        player.setOnCompletionListener(this);
-        setAttributes(player);
-        player.setVolume((float) volume, (float) volume);
-        player.setLooping(this.releaseMode == ReleaseMode.LOOP);
-        return player;
+    private SimpleExoPlayer createPlayer() {
+        TrackSelector trackSelector = new DefaultTrackSelector();
+        final SimpleExoPlayer exoPlayer = ExoPlayerFactory.newSimpleInstance(this.ref.registrar.context(), trackSelector, new DefaultLoadControl());
+        exoPlayer.setVolume((float) volume);
+        exoPlayer.setRepeatMode(this.releaseMode == ReleaseMode.LOOP ? REPEAT_MODE_ALL : REPEAT_MODE_OFF);
+        setAttributes(exoPlayer);
+
+        //player.setOnPreparedListener(this);
+        //player.setOnCompletionListener(this);
+        exoPlayer.addListener(
+            new DefaultEventListener() {
+                public void onPlayerStateChanged(final boolean playWhenReady, final int playbackState) {
+                  super.onPlayerStateChanged(playWhenReady, playbackState);
+                  if (playbackState == Player.STATE_READY && !prepared) {
+                    onPrepared(exoPlayer);
+                  }
+                  else if (playbackState == Player.STATE_ENDED) {
+                    onCompletion(exoPlayer);
+                  }
+                }
+
+                public void onPlayerError(final ExoPlaybackException error) {
+                  super.onPlayerError(error);
+                }
+            }
+        );
+
+        return exoPlayer;
     }
 
     private static boolean objectEquals(Object o1, Object o2) {
