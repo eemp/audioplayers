@@ -143,7 +143,9 @@ public class WrappedMediaPlayer {
         if (this.playing) {
             this.player.setPlayWhenReady(false);
         }
-        this.player.release();
+        if(this.player != null) {
+            this.player.release();
+        }
         this.player = null;
 
         this.prepared = false;
