@@ -104,10 +104,11 @@ class AudioPlayer {
 
   /// Play audio. Url can be a remote url (isLocal = false) or a local file system path (isLocal = true).
   Future<int> play(String url,
-      {bool isLocal: false, double volume: 1.0, Duration position}) async {
+      {bool isLocal: false, bool skipSilence: false, double speed: 1.0, double volume: 1.0, Duration position}) async {
     final double positionInSeconds = position == null ? null : position.inSeconds.toDouble();
-    int result = await _invokeMethod(
-        'play', {'url': url, 'isLocal': isLocal, 'volume': volume, 'position': positionInSeconds});
+    int result = await _invokeMethod('play', {
+      'url': url, 'isLocal': isLocal, 'skipSilence': skipSilence, 'speed': speed, 'volume': volume, 'position': positionInSeconds
+    });
 
     if (result == 1) {
       state = AudioPlayerState.PLAYING;
@@ -181,6 +182,12 @@ class AudioPlayer {
   /// This will keep the resource prepared (on Android) for when resume is called.
   Future<int> setUrl(String url, {bool isLocal: false}) {
     return _invokeMethod('setUrl', {'url': url, 'isLocal': isLocal});
+  }
+
+  /// Sets the skipSilence flag
+  /// Or set the speed of player
+  Future<int> setOptions({bool skipSilence: false, double speed}) {
+    return _invokeMethod('setOptions', {'skipSilence': skipSilence, 'speed': speed });
   }
 
   static void _log(String param) {

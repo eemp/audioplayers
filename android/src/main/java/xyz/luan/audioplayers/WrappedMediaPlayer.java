@@ -236,6 +236,10 @@ public class WrappedMediaPlayer {
         }
     }
 
+    public void setPlaybackParameters(double speed, boolean skipSilence) {
+        this.player.setPlaybackParameters(new PlaybackParameters((float) speed, 1, skipSilence));
+    }
+
     private SimpleExoPlayer createPlayer() {
         TrackSelector trackSelector = new DefaultTrackSelector();
         final SimpleExoPlayer exoPlayer = ExoPlayerFactory.newSimpleInstance(this.ref.registrar.context(), trackSelector, new DefaultLoadControl());

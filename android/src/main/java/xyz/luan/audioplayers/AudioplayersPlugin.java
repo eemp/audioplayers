@@ -53,11 +53,14 @@ public class AudioplayersPlugin implements MethodCallHandler {
         final WrappedMediaPlayer player = getPlayer(playerId);
         switch (call.method) {
             case "play": {
+                final Double position = call.argument("position");
+                final boolean skipSilence = call.argument("skipSilence");
+                final double speed = call.argument("speed");
                 final String url = call.argument("url");
                 final double volume = call.argument("volume");
-                final Double position = call.argument("position");
                 player.setUrl(url);
                 player.setVolume(volume);
+                player.setPlaybackParameters(speed, skipSilence);
                 if (position != null) {
                     player.seek(position);
                 }
@@ -83,6 +86,12 @@ public class AudioplayersPlugin implements MethodCallHandler {
             case "seek": {
                 final Double position = call.argument("position");
                 player.seek(position);
+                break;
+            }
+            case "setOptions": {
+                final boolean skipSilence = call.argument("skipSilence");
+                final double speed = call.argument("speed");
+                player.setPlaybackParameters(speed, skipSilence);
                 break;
             }
             case "setVolume": {
